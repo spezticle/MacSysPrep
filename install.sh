@@ -30,6 +30,165 @@ function clean_directory {
     echo "Existing repository at $dir has been removed."
 }
 
+# Function to compare Python versions
+function version_compare {
+    python_version=$(python3 --version | awk '{print $2}')
+    if [ "$(printf '%s\n%s' "$python_version" "$MIN_PYTHON_VERSION" | sort -V | head -n 1)" != "$MIN_PYTHON_VERSION" ]; then
+        return 1  # Installed version is less than the minimum required
+    fi
+    return 0  # Installed version is equal to or greater than the minimum required
+}
+
+# Function to install Xcode Command Line Tools silently
+function install_xcode {
+    echo "Checking if Xcode Command Line Tools are installed..."
+    if xcode-select -p >/dev/null 2>&1; then
+        echo "Xcode Command Line Tools are already installed."
+    else
+        echo "Xcode Command Line Tools not found. Installing silently using softwareupdate..."
+
+        # Install Xcode Command Line Tools silently
+        sudo softwareupdate --install --agree-to-license --verbose "Command Line Tools for Xcode"
+
+        # Verify installation
+        if xcode-select -p >/dev/null 2>&1; then
+            echo "Xcode Command Line Tools installed successfully."
+        else
+            echo -e "${BOLD_RED}Failed to install Xcode Command Line Tools. Exiting...${RESET}"
+            exit 1
+        fi
+    fi
+}
+
+# Function to install Homebrew
+function install_homebrew {
+    echo "Checking if Homebrew is installed..."
+
+    # Check known paths for Homebrew
+    if [ -x "/opt/homebrew/bin/brew" ]; then
+        export HOMEBREW_PATH="/opt/homebrew/bin/brew"
+    elif [ -x "/usr/local/bin/brew" ]; then
+        export HOMEBREW_PATH="/usr/local/bin/brew"
+    fi
+
+    # If Homebrew is found in a known location, test it
+    if [ -n "$HOMEBREW_PATH" ]; then
+        echo "Homebrew found at $HOMEBREW_PATH."
+        if ! "$HOMEBREW_PATH" -v >/dev/null 2>&1; then
+            echo "Homebrew is not functioning correctly. Reinstalling..."
+            HOMEBREW_PATH=""
+        fi
+    fi
+
+    # Install Homebrew if not found or not functioning
+    if [ -z "$HOMEBREW_PATH" ]; then
+        echo "Homebrew not found. Installing..."
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+        # Verify installation location
+        if [ -x "/opt/homebrew/bin/brew" ]; then
+            HOMEBREW_PATH="/opt/homebrew/bin/brew"
+        elif [ -x "/usr/local/bin/brew" ]; then
+            HOMEBREW_PATH="/usr/local/bin/brew"
+        else
+            echo -e "${BOLD_RED}Homebrew installation failed. Exiting...${RESET}"
+            exit 1
+        fi
+    fi
+
+    echo "Homebrew installed successfully at $HOMEBREW_PATH."
+
+    # Add Homebrew to PATH
+    add_homebrew_to_path "$HOMEBREW_PATH"
+}
+
+# Function to add Homebrew to the PATH
+function add_homebrew_to_path {
+    local brew_prefix
+    brew_prefix=$("$1" --prefix)
+    local shell_name
+    shell_name=$(basename "$SHELL")
+
+    echo "Adding Homebrew to PATH for $shell_name..."
+
+    # Determine the correct profile file to modify
+    case $shell_name in
+        zsh)
+            profile_file="$HOME/.zprofile"
+            ;;
+        bash)
+            profile_file="$HOME/.bash_profile"
+            ;;
+        *)
+            profile_file="$HOME/.profile"
+            ;;
+    esac
+
+    # Ensure the profile file exists
+    touch "$profile_file"
+
+    # Add Homebrew to PATH in the profile file if not already present
+    if ! grep -q "$brew_prefix/bin" "$profile_file" >/dev/null 2>&1; then
+        echo "export PATH=\"$brew_prefix/bin:\$PATH\"" >>"$profile_file"
+        echo "Homebrew path added to $profile_file."
+    else
+        echo "Homebrew path already exists in $profile_file."
+    fi
+
+    # Update PATH for current session
+    export PATH="$brew_prefix/bin:$PATH"
+    echo "Homebrew path added to current session."
+}
+
+# Function to verify Python 3 dependencies
+function check_python_dependencies {
+    echo "Checking for Python 3 installation..."
+    if ! command_exists python3; then
+        echo "Python 3 not found."
+        if [ "$HOME_BREW_INSTALLED" = true ]; then
+            echo "Installing Python 3 via Homebrew..."
+            brew install python3
+        else
+            echo -e "${BOLD_RED}Python 3 installation required. Please install manually.${RESET}"
+            exit 1
+        fi
+    fi
+    echo "Python 3 is installed: $(python3 --version)"
+
+    # Check if Python version meets the minimum requirement
+    echo "Checking Python version..."
+    if ! version_compare; then
+        echo "Python version is less than the required version ($MIN_PYTHON_VERSION). Updating via Homebrew..."
+        brew reinstall python3
+        if ! version_compare; then
+            echo -e "${BOLD_RED}Failed to update Python to the required version. Exiting...${RESET}"
+            exit 1
+        fi
+    fi
+    echo "Python version is sufficient: $(python3 --version)"
+
+    echo "Checking for venv module..."
+    if ! python3 -m venv --help >/dev/null 2>&1; then
+        echo "venv module is not available."
+        if [ "$HOME_BREW_INSTALLED" = true ]; then
+            echo "Reinstalling Python 3 via Homebrew..."
+            brew reinstall python3
+        else
+            echo -e "${BOLD_RED}venv module installation required. Please resolve manually.${RESET}"
+            exit 1
+        fi
+    fi
+    echo "Python venv module is available."
+
+    echo "Checking for pip..."
+    if ! python3 -m pip --version >/dev/null 2>&1; then
+        echo "pip not found. Installing pip..."
+        python3 -m ensurepip --upgrade
+        python3 -m pip install --upgrade pip
+    fi
+    echo "pip is installed: $(python3 -m pip --version)"
+}
+
 # Function to install Git and clone a repository
 function install_git_and_clone {
     echo "Checking for Git..."
