@@ -1,4 +1,6 @@
 #!/bin/zsh
+# This script is licensed under the PolyForm Noncommercial License 1.0.0.
+# For more details, see the LICENSE file or visit https://polyformproject.org/licenses/noncommercial/1.0.0/
 
 # Configurable install path for Git repositories
 GIT_INSTALL="/opt"
