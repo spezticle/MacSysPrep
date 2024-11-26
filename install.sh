@@ -17,6 +17,20 @@ BOLD_RED='\033[1;31m'
 BOLD_GREEN='\033[1;32m'
 RESET='\033[0m'
 
+# Check if script is being run as root
+if [ "$EUID" -eq 0 ]; then
+    echo -e "${BOLD_RED}Do not run this script as root. Exiting...${RESET}"
+    echo "ERROR: Script should not be run as root. Exiting..." >>"$LOG_FILE"
+    exit 1
+fi
+
+# Check if user has sudo privileges
+if ! sudo -v >/dev/null 2>&1; then
+    echo -e "${BOLD_RED}This script requires sudo privileges. Please run as a user with sudo access.${RESET}"
+    echo "ERROR: User lacks sudo privileges. Exiting..." >>"$LOG_FILE"
+    exit 1
+fi
+
 # Function to check if a command is available
 function command_exists {
     command -v "$1" >/dev/null 2>&1
@@ -237,6 +251,11 @@ function install_git_and_clone {
         exit 1
     fi
     echo "Repository cloned successfully."
+
+    # Ensure the current user owns the repository
+    echo "Ensuring ownership of the repository by the current user..."
+    sudo chown -Rv "$USER":"`id -gn`" "$clone_path" | tee -a "$LOG_FILE"
+    echo "Ownership of the repository at $clone_path has been set to $USER."
 }
 
 # Main script logic
